@@ -63,6 +63,11 @@ final class QuotaViewModel {
     var isClaudeEnrolled: Bool { enrolledServices.contains(.claude) }
     private var isCodexRecoveryPending = false
     private var isClaudeRecoveryPending = false
+    /// Set when enrolled-session recovery definitively failed (all sources
+    /// rejected). Blocks popover-open recovery retries — which would just replay
+    /// the same spinner — until fresh Claude Code credentials appear or the user
+    /// signs in.
+    private var claudeRecoveryExhausted = false
 
     // MARK: - Onboarding
 
@@ -239,14 +244,15 @@ final class QuotaViewModel {
                         SharedDefaults.enrollService(.claude)
                         self.trackServiceConnected(.claude)
                     }
-                    if state == .authenticated && self.refreshTask == nil {
-                        self.startAutoRefresh()
+                    if state == .authenticated {
+                        self.claudeRecoveryExhausted = false
+                        if self.refreshTask == nil {
+                            self.startAutoRefresh()
+                        }
                     }
                     if state == .signedOutByUser ||
                         (state == .unauthenticated && !self.isClaudeRecoveryPending) {
-                        self.claudeUsage = nil
-                        SharedDefaults.clearClaudeUsage()
-                        WidgetCenter.shared.reloadAllTimelines()
+                        self.clearClaudeUsageSnapshot()
                     }
                 }
             }
@@ -266,10 +272,7 @@ final class QuotaViewModel {
                     }
                     if state == .signedOutByUser ||
                         (state == .unauthenticated && !self.isCodexRecoveryPending) {
-                        self.codexUsage      = nil
-                        self.codexAutoReload = nil
-                        SharedDefaults.clearUsage()
-                        WidgetCenter.shared.reloadAllTimelines()
+                        self.clearCodexUsageSnapshot()
                     }
                 }
             }
@@ -333,11 +336,13 @@ final class QuotaViewModel {
         }
         guard await claudeCoordinator.restoreWithoutPromptIfPossible(allowSignedOutByUser: true) else {
             logger.notice("[ClaudeRecovery] viewModel restore failed")
+            claudeRecoveryExhausted = true
             clearClaudeUsageSnapshot()
             return
         }
 
         logger.notice("[ClaudeRecovery] viewModel restore succeeded")
+        claudeRecoveryExhausted = false
         claudeState = .authenticated
         claudeError = nil
         await refreshClaude()
@@ -349,12 +354,18 @@ final class QuotaViewModel {
         codexAutoReload = nil
         SharedDefaults.clearUsage()
         WidgetCenter.shared.reloadAllTimelines()
+        // Discarding the snapshot means any in-flight refresh is doomed — kill its
+        // spinner too, so a definitive auth rejection can't leave stale loading UI.
+        codexRefreshGeneration += 1
+        isCodexLoading = false
     }
 
     private func clearClaudeUsageSnapshot() {
         claudeUsage = nil
         SharedDefaults.clearClaudeUsage()
         WidgetCenter.shared.reloadAllTimelines()
+        claudeRefreshGeneration += 1
+        isClaudeLoading = false
     }
 
     // MARK: - Network path monitor
@@ -791,9 +802,24 @@ final class QuotaViewModel {
         }
 
         if isClaudeEnrolled && !isClaudeAuthenticated && !isClaudeRecoveryPending {
-            logger.notice("[ClaudeRecovery] popover retry scheduled state=\(String(describing: self.claudeState), privacy: .public)")
-            isClaudeRecoveryPending = true
-            Task { await restoreEnrolledClaudeIfNeeded() }
+            if !claudeRecoveryExhausted {
+                logger.notice("[ClaudeRecovery] popover retry scheduled state=\(String(describing: self.claudeState), privacy: .public)")
+                isClaudeRecoveryPending = true
+                Task { await restoreEnrolledClaudeIfNeeded() }
+            } else {
+                // Recovery already failed definitively — don't replay the spinner on
+                // every open. Only retry if fresh Claude Code credentials appeared
+                // (e.g. the user ran `claude` and its token refreshed). The check runs
+                // without raising isClaudeRecoveryPending so the UI stays on Connect
+                // unless recovery actually has a chance.
+                Task {
+                    guard await claudeCoordinator.hasUsableOAuthCredentials() else { return }
+                    guard !isClaudeRecoveryPending, !isClaudeAuthenticated else { return }
+                    logger.notice("[ClaudeRecovery] popover retry: fresh credentials found; retrying exhausted recovery")
+                    isClaudeRecoveryPending = true
+                    await restoreEnrolledClaudeIfNeeded()
+                }
+            }
         }
 
         guard isCodexAuthenticated || isClaudeAuthenticated else { return }
@@ -830,6 +856,7 @@ final class QuotaViewModel {
             // Propagate auth state synchronously before refreshClaude() checks isClaudeAuthenticated.
             // The stateStream observer will also fire, but may lag behind by one async hop.
             claudeState = .authenticated
+            claudeRecoveryExhausted = false
             // Mirror the stream-observer enrollment so isClaudeEnrolled is true before the refresh.
             if !enrolledServices.contains(.claude) {
                 enrolledServices.insert(.claude)
