@@ -19,12 +19,14 @@ struct ClaudeAuthCoordinatorTests {
     private func makeSUT(
         probe: @escaping ClaudeAuthCoordinator.SessionProbe,
         headlessSessionReviver: ClaudeAuthCoordinator.HeadlessSessionReviver? = nil,
-        oauthCredentialsLoader: ClaudeAuthCoordinator.OAuthCredentialsLoader? = nil
+        oauthCredentialsLoader: ClaudeAuthCoordinator.OAuthCredentialsLoader? = nil,
+        sessionValidator: ClaudeAuthCoordinator.SessionValidator? = nil
     ) -> ClaudeAuthCoordinator {
         ClaudeAuthCoordinator(
             probe: probe,
             headlessSessionReviver: headlessSessionReviver ?? { .notFound },
-            oauthCredentialsLoader: oauthCredentialsLoader ?? { _ in throw ClaudeOAuthCredentialsError.notFound }
+            oauthCredentialsLoader: oauthCredentialsLoader ?? { _ in throw ClaudeOAuthCredentialsError.notFound },
+            sessionValidator: sessionValidator ?? { _ in .valid(orgId: "validated-org") }
         )
     }
 
@@ -401,7 +403,41 @@ struct ClaudeAuthCoordinatorTests {
 
     @Test("revalidate from authenticated with valid session stays authenticated, returns true")
     func revalidateSuccess() async throws {
-        let sut = makeSUT(probe: { .found(orgId: "x", cookies: []) })
+        let sut = makeSUT(
+            probe: { .found(orgId: "x", cookies: []) },
+            sessionValidator: { _ in .valid(orgId: "server-org") }
+        )
+        await sut.bootstrap()
+        let result = await sut.revalidateSessionAfterAuthFailure()
+        #expect(result == true)
+        #expect(await sut.state == .authenticated)
+        // The server-validated orgId wins over whatever the cookie probe reported.
+        let ctx = try await sut.requestContext()
+        #expect(ctx.orgId == "server-org")
+    }
+
+    @Test("revalidate with cookies the server rejects → unauthenticated, returns false")
+    func revalidateStaleCookies() async throws {
+        // Regression: an expired sessionKey leaves long-lived cookies (lastActiveOrg)
+        // behind, so the passive probe still reports .found. Revalidation must not
+        // trust that — the server's verdict signs the session out.
+        let sut = makeSUT(
+            probe: { .found(orgId: "org-stale", cookies: []) },
+            sessionValidator: { _ in .invalid }
+        )
+        await sut.bootstrap()
+        #expect(await sut.state == .authenticated)
+        let result = await sut.revalidateSessionAfterAuthFailure()
+        #expect(result == false)
+        #expect(await sut.state == .unauthenticated)
+    }
+
+    @Test("revalidate with indeterminate validation keeps session, returns true")
+    func revalidateIndeterminateValidation() async throws {
+        let sut = makeSUT(
+            probe: { .found(orgId: "org-1", cookies: []) },
+            sessionValidator: { _ in .indeterminate }
+        )
         await sut.bootstrap()
         let result = await sut.revalidateSessionAfterAuthFailure()
         #expect(result == true)

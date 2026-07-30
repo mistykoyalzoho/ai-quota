@@ -10,6 +10,16 @@ public enum ClaudeProbeResult: Sendable {
     case notFound
 }
 
+/// Outcome of a live server check of a web session's cookies.
+public enum ClaudeSessionValidation: Sendable, Equatable {
+    /// The sessionKey survived a round-trip; the session is usable.
+    case valid(orgId: String)
+    /// The server rejected the session, or no sessionKey cookie exists.
+    case invalid
+    /// No verdict — the server could not be reached or answered abnormally.
+    case indeterminate
+}
+
 // MARK: - Request context
 
 /// Value type the coordinator produces for authenticated requests.
@@ -51,14 +61,17 @@ public actor ClaudeAuthCoordinator {
     public typealias SessionProbe = @Sendable () async -> ClaudeProbeResult
     public typealias HeadlessSessionReviver = @Sendable () async -> ClaudeProbeResult?
     public typealias OAuthCredentialsLoader = @Sendable (_ allowKeychain: Bool) throws -> ClaudeOAuthCredentials
+    public typealias SessionValidator = @Sendable (_ cookies: [HTTPCookie]) async -> ClaudeSessionValidation
     private let probe: SessionProbe
     private let headlessSessionReviver: HeadlessSessionReviver
     private let oauthCredentialsLoader: OAuthCredentialsLoader
+    private let sessionValidator: SessionValidator
 
     public init(
         probe: SessionProbe? = nil,
         headlessSessionReviver: HeadlessSessionReviver? = nil,
-        oauthCredentialsLoader: OAuthCredentialsLoader? = nil
+        oauthCredentialsLoader: OAuthCredentialsLoader? = nil,
+        sessionValidator: SessionValidator? = nil
     ) {
         self.probe = probe ?? ClaudeAuthCoordinator.wkProbe
         self.headlessSessionReviver = headlessSessionReviver ?? ClaudeAuthCoordinator.headlessWebSessionReviver
@@ -67,6 +80,7 @@ public actor ClaudeAuthCoordinator {
                 keychainReader: allowKeychain ? .claudeCodeInteractive : nil
             )
         }
+        self.sessionValidator = sessionValidator ?? ClaudeAuthCoordinator.liveSessionValidator
     }
 
     // MARK: - State stream
@@ -299,13 +313,35 @@ public actor ClaudeAuthCoordinator {
         guard state == .authenticated else { return false }
 
         switch result {
-        case .found(let orgId, let cookies):
-            cachedOAuthCredentials = nil
-            capturedOrgId = orgId
-            capturedCookies = cookies
-            injectCookies(cookies)
-            persistSharedAuthContext()
-            return true
+        case .found(_, let cookies):
+            // The API just returned 401, so existing cookies are suspect: the passive
+            // probe accepts long-lived cookies (lastActiveOrg) that outlive the
+            // sessionKey, which would keep a dead session "authenticated" forever.
+            // Only stay authenticated if the sessionKey survives a live round-trip.
+            let validation = await sessionValidator(cookies)
+
+            // Re-check: another transition may have run while validation was in flight.
+            guard state == .authenticated else { return false }
+
+            switch validation {
+            case .valid(let orgId):
+                cachedOAuthCredentials = nil
+                capturedOrgId = orgId
+                capturedCookies = cookies
+                injectCookies(cookies)
+                persistSharedAuthContext()
+                return true
+            case .indeterminate:
+                // Offline or server hiccup — no verdict, so keep the session.
+                // The next refresh cycle revalidates again if the 401 persists.
+                logger.notice("[ClaudeCoord] revalidate: session check indeterminate; keeping session")
+                return true
+            case .invalid:
+                logger.notice("[ClaudeCoord] revalidate: server rejected web session; signing out")
+                clearAuthContext()
+                transition(to: .unauthenticated)
+                return false
+            }
         case .notFound, .none:
             clearAuthContext()
             transition(to: .unauthenticated)
@@ -382,6 +418,13 @@ public actor ClaudeAuthCoordinator {
         let credentials = try oauthCredentialsLoader(true)
         cachedOAuthCredentials = credentials
         return credentials
+    }
+
+    /// Cheap non-interactive check for usable Claude Code credentials (file or
+    /// Keychain). Used to decide whether retrying enrolled-session recovery has
+    /// any chance of succeeding without prompting the user.
+    public func hasUsableOAuthCredentials() -> Bool {
+        (try? loadOAuthCredentials(allowKeychain: true)) != nil
     }
 
     public func invalidateCachedOAuthCredentials() {
@@ -574,34 +617,75 @@ public actor ClaudeAuthCoordinator {
         }
     }
 
+    /// Resolves an orgId only for cookies that plausibly form a usable session.
+    /// The long-lived lastActiveOrg cookie outlives the sessionKey, so it must
+    /// never be trusted on its own: without server validation an expired session
+    /// keeps "authenticating" from every probe site (bootstrap, sign-in, recovery,
+    /// login polling) and the app loops on 401s. lastActiveOrg is only used to
+    /// pick the preferred org once the sessionKey proves valid — or, when the
+    /// server is unreachable, as benefit of the doubt so an offline launch
+    /// doesn't visually sign the user out.
     fileprivate static func resolveOrgId(from cookies: [HTTPCookie]) async -> String? {
-        if let orgId = cookies.first(where: { $0.name == "lastActiveOrg" })?.value,
-           !orgId.isEmpty {
-            return orgId
-        }
+        let lastActiveOrg = (cookies.first(where: { $0.name == "lastActiveOrg" })?.value)
+            .flatMap { $0.isEmpty ? nil : $0 }
         guard let sessionKey = cookies.first(where: { $0.name == "sessionKey" })?.value,
               !sessionKey.isEmpty
         else { return nil }
-        return await fetchOrgId(sessionKey: sessionKey)
+        switch await validateSession(sessionKey: sessionKey) {
+        case .valid(let serverOrgId):
+            return lastActiveOrg ?? serverOrgId
+        case .invalid:
+            return nil
+        case .indeterminate:
+            return lastActiveOrg
+        }
     }
 
-    private static func fetchOrgId(sessionKey: String) async -> String? {
-        guard let url = URL(string: "https://claude.ai/api/organizations") else { return nil }
+    private static func organizationsRequest(url: URL, sessionKey: String) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 10
         request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    /// Real session validator: proves the sessionKey cookie is still accepted by
+    /// the server. Never trusts long-lived cookies — an expired session must come
+    /// back .invalid so revalidation can sign out.
+    private static var liveSessionValidator: SessionValidator {
+        { cookies in
+            guard let sessionKey = cookies.first(where: { $0.name == "sessionKey" })?.value,
+                  !sessionKey.isEmpty
+            else { return .invalid }
+            return await validateSession(sessionKey: sessionKey)
+        }
+    }
+
+    private static func validateSession(sessionKey: String) async -> ClaudeSessionValidation {
+        guard let url = URL(string: "https://claude.ai/api/organizations") else { return .indeterminate }
+        let request = organizationsRequest(url: url, sessionKey: sessionKey)
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let organizations = try? JSONDecoder().decode([ClaudeWebOrganization].self, from: data)
-            else { return nil }
-            return organizations.first(where: { $0.hasChatCapability })?.uuid
-                ?? organizations.first(where: { !$0.isAPIOnly })?.uuid
-                ?? organizations.first?.uuid
+            guard let status = (response as? HTTPURLResponse)?.statusCode else { return .indeterminate }
+            switch status {
+            case 200:
+                // A 200 that doesn't decode is an interstitial (e.g. Cloudflare),
+                // not proof the session is dead.
+                guard let organizations = try? JSONDecoder().decode([ClaudeWebOrganization].self, from: data) else {
+                    return .indeterminate
+                }
+                guard let orgId = ClaudeWebOrganization.preferredOrgId(in: organizations) else {
+                    return .invalid
+                }
+                return .valid(orgId: orgId)
+            case 401, 403:
+                return .invalid
+            default:
+                return .indeterminate
+            }
         } catch {
-            return nil
+            return .indeterminate
         }
     }
 
@@ -653,6 +737,12 @@ private struct ClaudeWebOrganization: Decodable {
 
     var isAPIOnly: Bool {
         !normalizedCapabilities.isEmpty && normalizedCapabilities == ["api"]
+    }
+
+    static func preferredOrgId(in organizations: [ClaudeWebOrganization]) -> String? {
+        organizations.first(where: { $0.hasChatCapability })?.uuid
+            ?? organizations.first(where: { !$0.isAPIOnly })?.uuid
+            ?? organizations.first?.uuid
     }
 }
 
