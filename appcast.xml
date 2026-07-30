@@ -5,7 +5,7 @@
         <link>https://github.com/niederme/ai-quota</link>
         <description>AIQuota release feed</description>
         <item>
-            <title>Version 1.9.22</title>
+            <title>Version 1.9.23</title>
             <description><![CDATA[
 <!DOCTYPE html>
 <html>
@@ -47,17 +47,17 @@
 </style>
 </head>
 <body>
-<h2>What's New in 1.9.22</h2>  <ul><li><strong>Accurate Codex limits</strong> — AIQuota now handles accounts where Codex currently reports only the weekly limit, preserving the familiar two-ring layout while showing the correct percentage and reset time without duplicate or misleading data.</li></ul> <img src="https://github.com/niederme/ai-quota/releases/download/v1.9.22/AIQuota-1.9.22.png" alt="AIQuota 1.9.22" width="600">
+<h2>What's New in 1.9.23</h2>  <ul><li><strong>Clearer Fable 5 and Claude usage-credit spending</strong> — AIQuota now shows Claude’s combined monthly usage-credit total separately from the 5-hour and 7-day plan limits. Variable costs are highlighted without guessing how much came from Fable 5 pay-as-you-go or usage after plan limits.</li> <li><strong>More reliable Claude sign-in</strong> — AIQuota now validates restored web sessions before using them. Expired sessions return to a clear Sign In state instead of repeatedly retrying stale cookies or leaving the popover stuck.</li></ul> <img src="https://github.com/niederme/ai-quota/releases/download/v1.9.23/AIQuota-1.9.23.png" alt="AIQuota 1.9.23" width="600">
 </body>
 </html>
 ]]></description>
-            <sparkle:version>380</sparkle:version>
-            <sparkle:shortVersionString>1.9.22</sparkle:shortVersionString>
+            <sparkle:version>381</sparkle:version>
+            <sparkle:shortVersionString>1.9.23</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <enclosure
-                url="https://github.com/niederme/ai-quota/releases/download/v1.9.22/AIQuota.zip"
-                sparkle:edSignature="atKNoWdH9pqhddZRtJtraTTYrhpKgwYEdQA1jnl5Clg/ErZOwPgOlr1KdvqlTdDeOSG5HsYTRHw79CRzshTIBw=="
-                length="6687540"
+                url="https://github.com/niederme/ai-quota/releases/download/v1.9.23/AIQuota.zip"
+                sparkle:edSignature="OGVZSxxvrn0T8zJ2WI2jjHFcnJ1nBNnE+/f8MrEcBbfK3jLXSI0pFxfGAwO554oNGE9JfHRakjzznHdHcLBSAA=="
+                length="6757665"
                 type="application/zip"/>
         </item>
     </channel>
