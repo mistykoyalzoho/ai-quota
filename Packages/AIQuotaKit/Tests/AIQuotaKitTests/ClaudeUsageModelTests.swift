@@ -152,6 +152,107 @@ struct ClaudeUsageModelTests {
         #expect(usage.bonusUsage?.spent == 191.64)
         #expect(usage.bonusUsage?.monthlyLimit == nil)
         #expect(usage.bonusUsage?.currencyCode == "USD")
+        #expect(usage.usageCredits?.spent == 191.64)
+        #expect(usage.usageCredits?.isUnlimited == true)
+        #expect(usage.usageCredits?.utilization == nil)
+    }
+
+    @Test("Claude web spend is authoritative and honors money exponent")
+    func webSpendIsAuthoritative() throws {
+        let json = """
+        {
+          "five_hour": {
+            "utilization": 0,
+            "resets_at": "2026-07-30T16:50:00.000Z"
+          },
+          "seven_day": {
+            "utilization": 0,
+            "resets_at": "2026-08-05T18:00:00.000Z"
+          },
+          "extra_usage": {
+            "is_enabled": true,
+            "monthly_limit": null,
+            "used_credits": 9999,
+            "currency": "USD",
+            "spend_limit_reached": false
+          },
+          "spend": {
+            "used": {
+              "amount_minor": 43960,
+              "currency": "USD",
+              "exponent": 3
+            },
+            "limit": null,
+            "percent": 0,
+            "severity": "normal",
+            "enabled": true
+          }
+        }
+        """
+
+        let usage = try ClaudeClient._decodeUsageForTesting(
+            Data(json.utf8),
+            planLabel: .pro,
+            source: .web,
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        #expect(usage.usageCredits?.spent == 43.96)
+        #expect(usage.usageCredits?.currencyCode == "USD")
+        #expect(usage.usageCredits?.isUnlimited == true)
+        #expect(usage.usageCredits?.needsAttention == false)
+        #expect(usage.shouldExplainUsageCreditsSeparation == true)
+    }
+
+    @Test("Claude spend warning and cap state require attention")
+    func spendWarningAndCapStateRequireAttention() throws {
+        let json = """
+        {
+          "five_hour": { "utilization": 12, "resets_at": null },
+          "seven_day": { "utilization": 0, "resets_at": null },
+          "extra_usage": {
+            "is_enabled": true,
+            "spend_limit_reached": true
+          },
+          "spend": {
+            "used": { "amount_minor": 8500, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 10000, "currency": "USD", "exponent": 2 },
+            "percent": 85,
+            "severity": "future_server_value",
+            "enabled": true
+          }
+        }
+        """
+
+        let usage = try ClaudeClient._decodeUsageForTesting(
+            Data(json.utf8),
+            planLabel: .pro,
+            source: .web,
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        #expect(usage.usageCredits?.monthlyLimit == 100)
+        #expect(usage.usageCredits?.utilization == 85)
+        #expect(usage.usageCredits?.severity == .unknown)
+        #expect(usage.usageCredits?.limitReached == true)
+        #expect(usage.usageCredits?.needsAttention == true)
+        #expect(usage.shouldExplainUsageCreditsSeparation == false)
+    }
+
+    @Test("missing plan windows never claim credits are separate")
+    func missingWindowsDoNotClaimCreditSeparation() {
+        let usage = ClaudeUsage(
+            fiveHourUtilization: nil,
+            fiveHourResetsAt: nil,
+            sevenDayUtilization: nil,
+            sevenDayResetsAt: nil,
+            extraUsage: nil,
+            usageCredits: .init(spent: 20, currencyCode: "USD"),
+            planLabel: .enterprise,
+            fetchedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        #expect(usage.shouldExplainUsageCreditsSeparation == false)
     }
 
     @Test("Claude Enterprise extra usage spend decodes cents as dollars")

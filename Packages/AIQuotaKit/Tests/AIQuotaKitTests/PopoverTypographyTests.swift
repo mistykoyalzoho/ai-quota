@@ -14,10 +14,12 @@ struct PopoverTypographyTests {
         #expect(!popoverSource.contains(#"secondaryLabel: "7-day""#))
 
         #expect(popoverSource.contains(#".font(.system(size: 13, weight: .medium))"#))
-        #expect(popoverSource.contains(#"Text(label + ":").font(.caption2).foregroundStyle(labelTint)"#))
+        #expect(popoverSource.contains(#"Text(label + ":")"#))
+        #expect(popoverSource.contains(#".foregroundStyle(labelTint)"#))
         // Stats row values are intentionally NOT bold — the reset captions with their
         // urgency color carry the real signal, and bolding metadata inverted the hierarchy.
-        #expect(popoverSource.contains(#"Text(value).font(.caption2.monospacedDigit())"#))
+        #expect(popoverSource.contains(#".font(.caption2.monospacedDigit())"#))
+        #expect(popoverSource.contains(#".fixedSize(horizontal: true, vertical: false)"#))
         #expect(!popoverSource.contains(#"Text(value).font(.caption2.monospacedDigit().bold())"#))
         #expect(!popoverSource.contains(#".font(.system(size: 13, weight: .bold).monospacedDigit())"#))
 
@@ -57,19 +59,24 @@ struct PopoverTypographyTests {
         #expect(!popoverSource.contains(#"compactRow("Spent", "\(Int(extra.usedCredits))/\(extra.monthlyLimit)", "plus.circle.fill")"#))
     }
 
-    @Test("budget strips appear only for exception states")
-    func budgetStripsAppearOnlyForExceptionStates() throws {
+    @Test("variable spending is amber while a Claude cap or critical state is red")
+    func variableSpendingUsesCostAttentionColors() throws {
         let popoverSource = try String(contentsOf: repoRoot.appending(path: "AIQuota/Views/PopoverView.swift"), encoding: .utf8)
-        let budgetStripSource = try String(contentsOf: repoRoot.appending(path: "AIQuota/Views/BudgetStripView.swift"), encoding: .utf8)
         let demoSource = try String(contentsOf: repoRoot.appending(path: "AIQuota/Demo/DemoDriver.swift"), encoding: .utf8)
 
-        #expect(budgetStripSource.contains("static let showThreshold: Double = 100"))
-        #expect(popoverSource.contains("if extra.utilization >= BudgetStripView.showThreshold"))
-        #expect(budgetStripSource.contains(#"Text("Spent:")"#))
-        #expect(budgetStripSource.contains("extra.utilization >= 85 ? .critical : .warningAmber"))
-        #expect(popoverSource.contains("private func extraUsageValueTint(_ extra: ClaudeUsage.ExtraUsage) -> Color?"))
-        #expect(popoverSource.contains("guard extra.utilization >= 85 else { return nil }"))
-        #expect(popoverSource.contains("valueTint: tint"))
+        #expect(popoverSource.contains(#""Usage credits:""#))
+        #expect(popoverSource.contains(#""Separate from plan limits""#))
+        #expect(popoverSource.contains("credits.limitReached || credits.severity == .critical"))
+        #expect(popoverSource.contains("labelTint: .warningAmber"))
+        #expect(popoverSource.contains("valueTint: .warningAmber"))
+        #expect(popoverSource.contains("usage.shouldExplainUsageCreditsSeparation"))
+        #expect(popoverSource.contains(#"title: "One Monthly Total""#))
+        #expect(popoverSource.contains(#"infoTitle: "Estimated Monthly Spend""#))
+        #expect(popoverSource.contains("May include Fable 5 pay-as-you-go and usage after plan limits."))
+        #expect(popoverSource.contains("usage-credit events and converts them at 25 credits = $1."))
+        #expect(popoverSource.contains(#".font(.caption.weight(.semibold))"#))
+        #expect(!popoverSource.contains("BudgetStripView(extra: extra)"))
+        #expect(!popoverSource.contains("private func extraUsageValueTint"))
         #expect(!popoverSource.contains("if utilization >= 70"))
         #expect(popoverSource.contains("isExhaustedWithoutReload && autoReload != nil"))
         #expect(popoverSource.contains("if shouldShowExceptionBar, let autoReload"))

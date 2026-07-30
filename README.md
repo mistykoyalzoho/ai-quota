@@ -16,7 +16,7 @@ The marketing site in `docs/` follows the shared Codex web preview convention us
 
 - **Menu bar gauge** — compact, color-coded arc icons that show both Codex and Claude Code together by default when both services are connected
 - **Popover dashboard** — Codex and Claude Code share the same dual-arc gauge language: the 5-hour window is the outer ring when reported, and the 7-day window remains on the inner ring
-- **Service details that matter** — reset timers, plan info, credit balances, monthly overage spend, and clear warning states are visible at a glance
+- **Service details that matter** — reset timers, plan info, credit balances, Claude usage-credit spend, and clear warning states are visible at a glance
 - **Desktop widgets** — polished widget variants for single-service and dual-service monitoring, including configurable small and medium widgets plus a large two-service layout
 - **Graceful empty and loading states** — widgets and the popover keep a stable layout when a service is disconnected, restoring, or waiting on fresh data
 - **Adaptive refresh controls** — choose `Auto` for a five-minute baseline that speeds up to every minute while usage is changing or near a threshold, then backs off when the Mac is idle, offline, or on low power
@@ -38,6 +38,14 @@ The marketing site in `docs/` follows the shared Codex web preview convention us
 - **Large** — two-service overview with larger gauges and a dedicated detail row
 
 Widgets refresh automatically from cached data, app-driven reloads, and background timeline updates. If macOS ever leaves a pinned widget stuck in a stale state after an update, removing and re-adding that widget instance usually clears the cached archive.
+
+---
+
+## Claude Usage Credits
+
+Claude plan limits and usage credits are separate meters. On Pro, pay-as-you-go models such as Fable 5 use credits without drawing from the 5-hour or 7-day plan windows; credits can also cover continued usage after included limits are exhausted. AIQuota keeps the plan gauges unchanged and shows monthly **Usage credits** spend as a separate row when the reported total is greater than zero.
+
+Claude reports credit spending as one combined monthly total, so AIQuota does not invent a Fable-versus-overage breakdown. When both plan windows are idle while credit spending is nonzero, the popover clarifies that the spending is separate from plan limits. See [Claude Fable 5 on your plan](https://support.claude.com/en/articles/15424964-claude-fable-5-on-your-plan) for Anthropic's current plan rules.
 
 ---
 

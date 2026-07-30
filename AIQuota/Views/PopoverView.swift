@@ -316,8 +316,9 @@ struct PopoverView: View {
                     compactRow(
                         "Spent",
                         formatCodexDollarAmount(spent),
-                        labelTint: overageValueTint,
-                        valueTint: overageValueTint,
+                        labelTint: .warningAmber,
+                        valueTint: .warningAmber,
+                        infoTitle: "Estimated Monthly Spend",
                         infoHelp: codexSpentHelpText
                     )
                 }
@@ -350,47 +351,35 @@ struct PopoverView: View {
         if let usage = viewModel.claudeUsage {
             VStack(alignment: .leading, spacing: 6) {
                 compactRow("Plan", usage.planDisplayName)
-                if let extra = usage.extraUsage, extra.isEnabled {
-                    if extra.utilization >= BudgetStripView.showThreshold {
-                        BudgetStripView(extra: extra)
-                    } else if let tint = extraUsageValueTint(extra) {
-                        compactRow(
-                            "Spent",
-                            formatBonusSpend(usage.bonusUsage, fallback: extra.usedCredits),
-                            labelTint: tint,
-                            valueTint: tint,
-                            infoHelp: claudeSpentHelpText
-                        )
-                    } else {
-                        compactRow(
-                            "Spent",
-                            formatBonusSpend(usage.bonusUsage, fallback: extra.usedCredits),
-                            labelTint: overageValueTint,
-                            valueTint: overageValueTint,
-                            infoHelp: claudeSpentHelpText
-                        )
+                if let credits = usage.usageCredits, credits.spent > 0 {
+                    let tint: Color = credits.limitReached || credits.severity == .critical
+                        ? .critical
+                        : .warningAmber
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Usage credits:")
+                            .font(.caption2)
+                            .foregroundStyle(tint)
+                        HStack(alignment: .center, spacing: 4) {
+                            Text("\(formatUsageCredits(credits)) spent")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(tint)
+                                .lineLimit(1)
+                            InfoPopoverButton(
+                                title: "One Monthly Total",
+                                text: claudeUsageCreditsHelpText,
+                                tint: tint
+                            )
+                            Spacer(minLength: 0)
+                        }
+                        if usage.shouldExplainUsageCreditsSeparation {
+                            Text("Separate from plan limits")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
-                } else if let bonus = usage.bonusUsage, bonus.spent > 0 {
-                    compactRow(
-                        "Spent",
-                        formatBonusSpend(bonus),
-                        labelTint: overageValueTint,
-                        valueTint: overageValueTint,
-                        infoHelp: claudeSpentHelpText
-                    )
                 }
             }
         }
-    }
-
-    private var overageValueTint: Color {
-        .warningAmber
-    }
-
-    /// Overage spend is amber. Red is reserved for the cap-hit strip.
-    private func extraUsageValueTint(_ extra: ClaudeUsage.ExtraUsage) -> Color? {
-        guard extra.utilization >= 85 else { return nil }
-        return overageValueTint
     }
 
     private func compactRow(
@@ -399,6 +388,7 @@ struct PopoverView: View {
         labelTint: Color = .secondary,
         valueTint: Color = .primary,
         suffix: String? = nil,
+        infoTitle: String? = nil,
         infoHelp: String? = nil
     ) -> some View {
         CompactStatRow(
@@ -407,16 +397,17 @@ struct PopoverView: View {
             labelTint: labelTint,
             valueTint: valueTint,
             suffix: suffix,
+            infoTitle: infoTitle,
             infoHelp: infoHelp
         )
     }
 
     private var codexSpentHelpText: String {
-        "Codex usage-credit events summed for \(currentMonthName). Converted at 25 credits = $1."
+        "AIQuota sums \(currentMonthName)’s usage-credit events and converts them at 25 credits = $1."
     }
 
-    private var claudeSpentHelpText: String {
-        "Claude reports this as monthly extra usage for \(currentMonthName). The response does not include an exact reset date."
+    private var claudeUsageCreditsHelpText: String {
+        "May include Fable 5 pay-as-you-go and usage after plan limits. Claude doesn’t provide a reliable breakdown."
     }
 
     private var currentMonthName: String {
@@ -425,16 +416,18 @@ struct PopoverView: View {
         return formatter.string(from: .now)
     }
 
-    private func formatBonusSpend(_ bonus: ClaudeUsage.BonusUsage?, fallback: Double) -> String {
-        guard let bonus else { return formatCreditAmount(fallback) }
-        return formatBonusSpend(bonus)
-    }
-
     private func formatBonusSpend(_ bonus: ClaudeUsage.BonusUsage) -> String {
         if let currencyCode = bonus.currencyCode {
             return formatCurrencyAmount(bonus.spent, currencyCode: currencyCode)
         }
         return formatCreditAmount(bonus.spent)
+    }
+
+    private func formatUsageCredits(_ credits: ClaudeUsage.UsageCredits) -> String {
+        if let currencyCode = credits.currencyCode {
+            return formatCurrencyAmount(credits.spent, currencyCode: currencyCode)
+        }
+        return formatCreditAmount(credits.spent)
     }
 
     private func formatCurrencyAmount(_ amount: Double, currencyCode: String) -> String {
@@ -711,46 +704,32 @@ private struct CompactStatRow: View {
     let labelTint: Color
     let valueTint: Color
     let suffix: String?
+    let infoTitle: String?
     let infoHelp: String?
 
-    @State private var isShowingInfo = false
-    @State private var hoverDelayTask: Task<Void, Never>?
-
     var body: some View {
-        if let infoHelp {
-            Button {
-                hoverDelayTask?.cancel()
-                isShowingInfo = true
-            } label: {
-                rowContent
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onHover(perform: hoverChanged)
-            .accessibilityLabel("\(label): \(value). \(infoHelp)")
-            .onDisappear {
-                hoverDelayTask?.cancel()
-            }
-        } else {
-            rowContent
-        }
+        rowContent
     }
 
     private var rowContent: some View {
-        HStack(alignment: .center, spacing: 5) {
-            Text(label + ":").font(.caption2).foregroundStyle(labelTint)
+        HStack(alignment: .center, spacing: 4) {
+            Text(label + ":")
+                .font(.caption2)
+                .foregroundStyle(labelTint)
+                .lineLimit(1)
             valueLabel
             if let suffix {
-                Text(suffix).font(.caption2).foregroundStyle(.tertiary)
+                Text(suffix)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
-            if infoHelp != nil {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(valueTint.opacity(0.75))
-                    .frame(width: 12, height: 12, alignment: .center)
-                    .offset(y: -0.5)
-                    .accessibilityHidden(true)
+            if let infoHelp {
+                InfoPopoverButton(
+                    title: infoTitle ?? label,
+                    text: infoHelp,
+                    tint: valueTint
+                )
                 Spacer(minLength: 0)
             }
         }
@@ -760,42 +739,92 @@ private struct CompactStatRow: View {
 
     @ViewBuilder
     private var valueLabel: some View {
-        let text = Text(value).font(.caption2.monospacedDigit())
+        Text(value)
+            .font(.caption2.monospacedDigit())
             .foregroundStyle(valueTint)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
+    }
+}
 
-        if let infoHelp {
-            text.popover(isPresented: $isShowingInfo, arrowEdge: .top) {
-                infoPopover(infoHelp)
+private struct InfoPopoverButton: View {
+    let title: String
+    let text: String
+    let tint: Color
+
+    @State private var isPresented = false
+    @State private var isPinned = false
+    @State private var hoverDelayTask: Task<Void, Never>?
+
+    var body: some View {
+        Button {
+            hoverDelayTask?.cancel()
+            if isPresented, isPinned {
+                isPinned = false
+                isPresented = false
+            } else {
+                isPinned = true
+                isPresented = true
             }
-        } else {
-            text
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(tint.opacity(0.75))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .onHover(perform: hoverChanged)
+        .popover(isPresented: presentationBinding, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+                .padding(9)
+                .frame(width: 210, alignment: .leading)
+        }
+        .accessibilityLabel("About \(title)")
+        .accessibilityHint(text)
+        .onDisappear {
+            hoverDelayTask?.cancel()
+        }
+    }
+
+    private var presentationBinding: Binding<Bool> {
+        Binding(
+            get: { isPresented },
+            set: { newValue in
+                isPresented = newValue
+                if !newValue {
+                    isPinned = false
+                }
+            }
+        )
     }
 
     private func hoverChanged(_ isHovering: Bool) {
         hoverDelayTask?.cancel()
 
         guard isHovering else {
-            isShowingInfo = false
+            if !isPinned {
+                isPresented = false
+            }
             return
         }
+        guard !isPresented else { return }
 
         hoverDelayTask = Task {
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                isShowingInfo = true
+                isPresented = true
             }
         }
-    }
-
-    private func infoPopover(_ infoHelp: String) -> some View {
-        Text(infoHelp)
-            .font(.caption)
-            .foregroundStyle(.foreground)
-            .fixedSize(horizontal: false, vertical: true)
-        .padding(10)
-        .frame(width: 230, alignment: .leading)
     }
 }
 

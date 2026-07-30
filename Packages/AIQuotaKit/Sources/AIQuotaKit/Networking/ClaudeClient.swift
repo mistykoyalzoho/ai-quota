@@ -268,6 +268,9 @@ public actor ClaudeClient {
         let bonusUsage: ClaudeUsage.BonusUsage? = spendLimit == nil
             ? Self.bonusUsage(from: raw.extraUsage, source: source)
             : nil
+        let usageCredits = spendLimit == nil
+            ? Self.usageCredits(from: raw.spend, fallback: bonusUsage, extraUsage: raw.extraUsage)
+            : nil
         return ClaudeUsage(
             fiveHourUtilization: raw.fiveHour?.utilization,
             fiveHourResetsAt: raw.fiveHour?.resetsAt,
@@ -275,6 +278,7 @@ public actor ClaudeClient {
             sevenDayResetsAt: sevenDay?.resetsAt,
             extraUsage: extra,
             bonusUsage: bonusUsage,
+            usageCredits: usageCredits,
             spendLimit: spendLimit,
             planLabel: planLabel,
             source: source,
@@ -300,6 +304,35 @@ public actor ClaudeClient {
             monthlyLimit: limit,
             utilization: utilization,
             currencyCode: raw.currency
+        )
+    }
+
+    private static func usageCredits(
+        from spend: ClaudeUsageResponse.SpendBucket?,
+        fallback: ClaudeUsage.BonusUsage?,
+        extraUsage: ClaudeUsageResponse.ExtraUsageBucket?
+    ) -> ClaudeUsage.UsageCredits? {
+        if let spend, let used = spend.used {
+            return ClaudeUsage.UsageCredits(
+                spent: used.amount,
+                monthlyLimit: spend.limit?.amount,
+                utilization: spend.limit == nil ? nil : spend.percent,
+                currencyCode: used.currency,
+                severity: .init(serverValue: spend.severity),
+                isEnabled: spend.enabled ?? extraUsage?.isEnabled ?? true,
+                limitReached: extraUsage?.spendLimitReached ?? false
+            )
+        }
+
+        guard let fallback else { return nil }
+        return ClaudeUsage.UsageCredits(
+            spent: fallback.spent,
+            monthlyLimit: fallback.monthlyLimit,
+            utilization: fallback.utilization,
+            currencyCode: fallback.currencyCode,
+            isEnabled: extraUsage?.isEnabled ?? true,
+            limitReached: extraUsage?.spendLimitReached
+                ?? ((fallback.utilization ?? 0) >= 100)
         )
     }
 
@@ -398,6 +431,7 @@ private struct ClaudeUsageResponse: Decodable {
     let fiveHour:  WindowBucket?
     let sevenDay:  WindowBucket?
     let extraUsage: ExtraUsageBucket?
+    let spend: SpendBucket?
 
     /// Nullable per-model buckets. Some Team/Max responses omit `seven_day`
     /// but still expose a model-specific weekly window we can display.
@@ -427,6 +461,25 @@ private struct ClaudeUsageResponse: Decodable {
         let usedCredits: Double?
         let utilization: Double?
         let currency: String?
+        let spendLimitReached: Bool?
+    }
+
+    struct SpendBucket: Decodable {
+        let used: Money?
+        let limit: Money?
+        let percent: Double?
+        let severity: String?
+        let enabled: Bool?
+    }
+
+    struct Money: Decodable {
+        let amountMinor: Double
+        let currency: String?
+        let exponent: Int
+
+        var amount: Double {
+            amountMinor / pow(10, Double(exponent))
+        }
     }
 }
 

@@ -7,6 +7,7 @@ public struct ClaudeUsage: Codable, Sendable, Equatable {
     public let sevenDayResetsAt: Date?
     public let extraUsage: ExtraUsage?
     public let bonusUsage: BonusUsage?
+    public let usageCredits: UsageCredits?
     public let spendLimit: SpendLimit?
     public let planLabel: PlanLabel
     public let primaryMetric: Metric
@@ -102,6 +103,87 @@ public struct ClaudeUsage: Codable, Sendable, Equatable {
         }
     }
 
+    public struct UsageCredits: Codable, Sendable, Equatable {
+        public enum Severity: Codable, Sendable, Equatable {
+            case normal
+            case warning
+            case critical
+            case unknown
+
+            public init(serverValue: String?) {
+                switch serverValue?.lowercased() {
+                case nil, "", "normal":
+                    self = .normal
+                case "warning", "warn":
+                    self = .warning
+                case "critical", "error":
+                    self = .critical
+                default:
+                    self = .unknown
+                }
+            }
+
+            public var needsAttention: Bool {
+                switch self {
+                case .warning, .critical:
+                    true
+                case .normal, .unknown:
+                    false
+                }
+            }
+
+            public init(from decoder: Decoder) throws {
+                let container = try decoder.singleValueContainer()
+                self.init(serverValue: try? container.decode(String.self))
+            }
+
+            public func encode(to encoder: Encoder) throws {
+                var container = encoder.singleValueContainer()
+                let value = switch self {
+                case .normal: "normal"
+                case .warning: "warning"
+                case .critical: "critical"
+                case .unknown: "unknown"
+                }
+                try container.encode(value)
+            }
+        }
+
+        public let spent: Double
+        public let monthlyLimit: Double?
+        public let utilization: Double?
+        public let currencyCode: String?
+        public let severity: Severity
+        public let isEnabled: Bool
+        public let limitReached: Bool
+
+        public init(
+            spent: Double,
+            monthlyLimit: Double? = nil,
+            utilization: Double? = nil,
+            currencyCode: String? = nil,
+            severity: Severity = .normal,
+            isEnabled: Bool = true,
+            limitReached: Bool = false
+        ) {
+            self.spent = spent
+            self.monthlyLimit = monthlyLimit
+            self.utilization = monthlyLimit == nil ? nil : utilization
+            self.currencyCode = currencyCode
+            self.severity = severity
+            self.isEnabled = isEnabled
+            self.limitReached = limitReached
+        }
+
+        public var isUnlimited: Bool { monthlyLimit == nil }
+
+        public var needsAttention: Bool {
+            limitReached
+                || severity.needsAttention
+                || (monthlyLimit != nil && (utilization ?? 0) >= 85)
+        }
+    }
+
     public struct SpendLimit: Codable, Sendable, Equatable {
         public let used: Double
         public let limit: Double
@@ -127,6 +209,13 @@ public struct ClaudeUsage: Codable, Sendable, Equatable {
     public var hasFiveHourWindow: Bool { fiveHourUtilization != nil && fiveHourResetsAt != nil }
     public var hasSevenDayWindow: Bool { sevenDayUtilization != nil && sevenDayResetsAt != nil }
     public var primaryMetricLabel: String { primaryMetric.displayLabel }
+    public var shouldExplainUsageCreditsSeparation: Bool {
+        guard let usageCredits, usageCredits.spent > 0,
+              let fiveHourUtilization,
+              let sevenDayUtilization
+        else { return false }
+        return fiveHourUtilization == 0 && sevenDayUtilization == 0
+    }
 
     public init(
         fiveHourUtilization: Double?,
@@ -135,6 +224,7 @@ public struct ClaudeUsage: Codable, Sendable, Equatable {
         sevenDayResetsAt: Date?,
         extraUsage: ExtraUsage?,
         bonusUsage: BonusUsage? = nil,
+        usageCredits: UsageCredits? = nil,
         spendLimit: SpendLimit? = nil,
         planLabel: PlanLabel? = nil,
         source: Source = .unknown,
@@ -145,11 +235,22 @@ public struct ClaudeUsage: Codable, Sendable, Equatable {
         self.sevenDayUtilization = sevenDayUtilization
         self.sevenDayResetsAt = sevenDayResetsAt
         self.extraUsage = extraUsage
-        self.bonusUsage = bonusUsage ?? extraUsage.map {
+        let resolvedBonusUsage = bonusUsage ?? extraUsage.map {
             BonusUsage(
                 spent: $0.usedCredits,
                 monthlyLimit: Double($0.monthlyLimit),
                 utilization: $0.utilization
+            )
+        }
+        self.bonusUsage = resolvedBonusUsage
+        self.usageCredits = usageCredits ?? resolvedBonusUsage.map {
+            UsageCredits(
+                spent: $0.spent,
+                monthlyLimit: $0.monthlyLimit,
+                utilization: $0.utilization,
+                currencyCode: $0.currencyCode,
+                isEnabled: extraUsage?.isEnabled ?? true,
+                limitReached: ($0.utilization ?? 0) >= 100
             )
         }
         self.spendLimit = spendLimit
@@ -231,6 +332,7 @@ public struct ClaudeUsage: Codable, Sendable, Equatable {
         case sevenDayResetsAt
         case extraUsage
         case bonusUsage
+        case usageCredits
         case spendLimit
         case planLabel
         case source
@@ -245,6 +347,7 @@ public struct ClaudeUsage: Codable, Sendable, Equatable {
         let sevenDayResetsAt = try container.decodeIfPresent(Date.self, forKey: .sevenDayResetsAt)
         let extraUsage = try container.decodeIfPresent(ExtraUsage.self, forKey: .extraUsage)
         let bonusUsage = try container.decodeIfPresent(BonusUsage.self, forKey: .bonusUsage)
+        let usageCredits = try container.decodeIfPresent(UsageCredits.self, forKey: .usageCredits)
         let spendLimit = try container.decodeIfPresent(SpendLimit.self, forKey: .spendLimit)
         let planLabel = try container.decodeIfPresent(PlanLabel.self, forKey: .planLabel)
         let source = try container.decodeIfPresent(Source.self, forKey: .source) ?? .unknown
@@ -256,6 +359,7 @@ public struct ClaudeUsage: Codable, Sendable, Equatable {
             sevenDayResetsAt: sevenDayResetsAt,
             extraUsage: extraUsage,
             bonusUsage: bonusUsage,
+            usageCredits: usageCredits,
             spendLimit: spendLimit,
             planLabel: planLabel,
             source: source,

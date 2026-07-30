@@ -53,6 +53,45 @@ final class WidgetRefreshPolicyTests: XCTestCase {
         XCTAssertEqual(next.timeIntervalSince(now), 90, accuracy: 0.5)
     }
 
+    func testWidgetClaudeDecoderCarriesUsageCreditsSpend() throws {
+        let json = """
+        {
+          "five_hour": {
+            "utilization": 0,
+            "resets_at": "2026-07-30T16:50:00.000Z"
+          },
+          "seven_day": {
+            "utilization": 0,
+            "resets_at": "2026-08-05T18:00:00.000Z"
+          },
+          "extra_usage": {
+            "is_enabled": true,
+            "used_credits": 9999,
+            "currency": "USD",
+            "spend_limit_reached": false
+          },
+          "spend": {
+            "used": {
+              "amount_minor": 4396,
+              "currency": "USD",
+              "exponent": 2
+            },
+            "limit": null,
+            "percent": 0,
+            "severity": "normal",
+            "enabled": true
+          }
+        }
+        """
+
+        let usage = try WidgetRefreshService._decodeClaudeUsageForTesting(Data(json.utf8), now: now)
+
+        XCTAssertEqual(usage.usageCredits?.spent ?? -1, 43.96, accuracy: 0.001)
+        XCTAssertEqual(usage.usageCredits?.currencyCode, "USD")
+        XCTAssertEqual(usage.usageCredits?.isUnlimited, true)
+        XCTAssertEqual(usage.shouldExplainUsageCreditsSeparation, true)
+    }
+
     private let now = Date(timeIntervalSince1970: 1_743_076_800)
 
     private func makeCodexUsage(
