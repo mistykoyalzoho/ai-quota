@@ -5,7 +5,7 @@
         <link>https://github.com/niederme/ai-quota</link>
         <description>AIQuota release feed</description>
         <item>
-            <title>Version 1.9.24</title>
+            <title>Version 1.9.25</title>
             <description><![CDATA[
 <!DOCTYPE html>
 <html>
@@ -47,17 +47,17 @@
 </style>
 </head>
 <body>
-<h2>What's New in 1.9.24</h2>  <ul><li><strong>No unexpected Keychain prompts:</strong> AIQuota now checks for reusable Claude Code credentials silently. If macOS cannot grant access without interrupting you, the app falls back to its normal Claude sign-in path.</li> <li><strong>More reliable updates:</strong> every Sparkle update now uses an immutable, build-specific download. Previously cached update information can no longer resolve to a differently signed archive.</li></ul> <img src="https://github.com/niederme/ai-quota/releases/download/v1.9.24/AIQuota-1.9.24.png" alt="AIQuota 1.9.24" width="600">
+<h2>What's New in 1.9.25</h2>  <ul><li><strong>Updates that wait for you:</strong> automatic checks now place a small amber dot on AIQuota's menu bar gauges instead of interrupting you with a window. Open AIQuota when convenient to see the available version and start the update.</li></ul> <img src="https://github.com/niederme/ai-quota/releases/download/v1.9.25/AIQuota-1.9.25.png" alt="AIQuota 1.9.25" width="600">
 </body>
 </html>
 ]]></description>
-            <sparkle:version>383</sparkle:version>
-            <sparkle:shortVersionString>1.9.24</sparkle:shortVersionString>
+            <sparkle:version>385</sparkle:version>
+            <sparkle:shortVersionString>1.9.25</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <enclosure
-                url="https://github.com/niederme/ai-quota/releases/download/v1.9.24/AIQuota-1.9.24-383.zip"
-                sparkle:edSignature="f47bQmKCzPTKgZ+BE8CvHdMMvT2fQdyyskN48qGAbKDZKz0MP75eMKLqRwWl45YrTaeRVjR3wRFwQaSzH6xzBQ=="
-                length="6758760"
+                url="https://github.com/niederme/ai-quota/releases/download/v1.9.25/AIQuota-1.9.25-385.zip"
+                sparkle:edSignature="fn9oB/1UOyTx5JLXnxHcHQLGROILBqs8Vrud3L+QV9BeOdpLUuexkz74nTKl+BBLCXWdviH4hcMO7RaADC25BQ=="
+                length="6772594"
                 type="application/zip"/>
         </item>
     </channel>
