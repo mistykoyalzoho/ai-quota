@@ -17,49 +17,60 @@ struct MenuBarIconView: View {
     let isLoading: Bool
     /// Worst metric for the currently displayed service — drives ring colour.
     let worstPercent: Int
+    let showsUpdateBadge: Bool
 
     init(
         usedPercent: Int,
         secondaryPercent: Int,
         limitReached: Bool,
         isLoading: Bool,
-        worstPercent: Int
+        worstPercent: Int,
+        showsUpdateBadge: Bool = false
     ) {
         self.usedPercent = usedPercent
         self.secondaryPercent = secondaryPercent
         self.limitReached = limitReached
         self.isLoading = isLoading
         self.worstPercent = worstPercent
+        self.showsUpdateBadge = showsUpdateBadge
     }
 
-    init(input: MenuBarGaugeInput) {
+    init(input: MenuBarGaugeInput, showsUpdateBadge: Bool = false) {
         self.init(
             usedPercent: input.usedPercent,
             secondaryPercent: input.secondaryPercent,
             limitReached: input.limitReached,
             isLoading: input.isLoading,
-            worstPercent: input.worstPercent
+            worstPercent: input.worstPercent,
+            showsUpdateBadge: showsUpdateBadge
         )
     }
 
     var body: some View {
-        Image(nsImage: GaugeImageMaker.image(
+        Image(nsImage: renderedImage())
+        .interpolation(.high)
+        .antialiased(true)
+        .frame(width: 22, height: 22)
+    }
+
+    private func renderedImage() -> NSImage {
+        let image = GaugeImageMaker.image(
             primaryPercent: usedPercent,
             secondaryPercent: secondaryPercent,
             limitReached: limitReached,
             isLoading: isLoading,
             size: 22,
             worstPercent: worstPercent
-        ))
-        .interpolation(.high)
-        .antialiased(true)
-        .frame(width: 22, height: 22)
+        )
+        if showsUpdateBadge { MenuBarUpdateBadge.draw(in: image) }
+        return image
     }
 }
 
 struct DoubleMenuBarIconView: View {
     let left: MenuBarGaugeInput
     let right: MenuBarGaugeInput
+    let showsUpdateBadge: Bool
 
     private let gaugeSize: CGFloat = 22
     private let spacing: CGFloat = 5
@@ -91,6 +102,7 @@ struct DoubleMenuBarIconView: View {
         )
 
         image.unlockFocus()
+        if showsUpdateBadge { MenuBarUpdateBadge.draw(in: image) }
         return image
     }
 
@@ -103,5 +115,23 @@ struct DoubleMenuBarIconView: View {
             size: gaugeSize,
             worstPercent: input.worstPercent
         )
+    }
+}
+
+private enum MenuBarUpdateBadge {
+    static func draw(in image: NSImage) {
+        let diameter: CGFloat = 6
+        let inset: CGFloat = 1
+        let rect = NSRect(
+            x: image.size.width - diameter - inset,
+            y: image.size.height - diameter - inset,
+            width: diameter,
+            height: diameter
+        )
+        image.lockFocus()
+        let dot = NSBezierPath(ovalIn: rect)
+        NSColor.systemOrange.setFill()
+        dot.fill()
+        image.unlockFocus()
     }
 }

@@ -13,9 +13,10 @@ struct AIQuotaApp: App {
     #endif
 
     // Sparkle updater — must be held at app scope for its lifetime.
-    // gentleDriverDelegate opts into polite (non-focus-stealing) update alerts,
-    // which is required for dockless menu bar apps.
-    private let gentleDriverDelegate = GentleSparkleDriverDelegate()
+    // Scheduled checks surface as a quiet badge in AIQuota. Sparkle's standard
+    // window is shown only after the user chooses the update from the popover.
+    private let updaterViewModel: UpdaterViewModel
+    private let gentleDriverDelegate: GentleSparkleDriverDelegate
     private let updaterController: SPUStandardUpdaterController
 
     init() {
@@ -26,11 +27,21 @@ struct AIQuotaApp: App {
         #if DEMO_MODE
         _demoDriver = State(initialValue: DemoDriver())
         #endif
+        let updaterViewModel = UpdaterViewModel()
+        let gentleDriverDelegate = GentleSparkleDriverDelegate(updaterViewModel: updaterViewModel)
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
             userDriverDelegate: gentleDriverDelegate
         )
+        updaterViewModel.connect(to: updaterController.updater)
+        self.updaterViewModel = updaterViewModel
+        self.gentleDriverDelegate = gentleDriverDelegate
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-AIQuotaShowUpdateBadge") {
+            updaterViewModel.noteAvailableUpdate(version: "1.9.25")
+        }
+        #endif
         // Silently check for a newer version on every launch.
         let updater = updaterController.updater
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
@@ -45,7 +56,7 @@ struct AIQuotaApp: App {
         MenuBarExtra {
             PopoverView()
                 .environment(viewModel)
-                .environment(UpdaterViewModel(updater: updaterController.updater))
+                .environment(updaterViewModel)
                 .onAppear {
                     viewModel.recordDailyActiveIfNeeded()
                     // Demo builds never fetch real usage — a live refresh here
@@ -98,7 +109,7 @@ struct AIQuotaApp: App {
         Settings {
             SettingsView()
                 .environment(viewModel)
-                .environment(UpdaterViewModel(updater: updaterController.updater))
+                .environment(updaterViewModel)
         }
         .defaultSize(width: 500, height: 720)
         .windowResizability(.contentSize)
@@ -111,10 +122,14 @@ struct AIQuotaApp: App {
         if shouldShowBothMenuBarGauges {
             DoubleMenuBarIconView(
                 left: menuBarGaugeInput(for: .codex),
-                right: menuBarGaugeInput(for: .claude)
+                right: menuBarGaugeInput(for: .claude),
+                showsUpdateBadge: updaterViewModel.availableUpdateVersion != nil
             )
         } else {
-            MenuBarIconView(input: menuBarGaugeInput(for: resolvedMenuBarService))
+            MenuBarIconView(
+                input: menuBarGaugeInput(for: resolvedMenuBarService),
+                showsUpdateBadge: updaterViewModel.availableUpdateVersion != nil
+            )
         }
     }
 
@@ -164,7 +179,43 @@ struct AIQuotaApp: App {
 /// alerts never steal focus from the user's active app. Required for dockless
 /// menu bar apps per Sparkle documentation.
 final class GentleSparkleDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    private let updaterViewModel: UpdaterViewModel
+
+    init(updaterViewModel: UpdaterViewModel) {
+        self.updaterViewModel = updaterViewModel
+    }
+
     var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    func standardUserDriverShouldHandleShowingScheduledUpdate(
+        _ update: SUAppcastItem,
+        andInImmediateFocus immediateFocus: Bool
+    ) -> Bool {
+        false
+    }
+
+    func standardUserDriverWillHandleShowingUpdate(
+        _ handleShowingUpdate: Bool,
+        forUpdate update: SUAppcastItem,
+        state: SPUUserUpdateState
+    ) {
+        guard !handleShowingUpdate, !state.userInitiated else { return }
+        let updaterViewModel = updaterViewModel
+        let version = update.displayVersionString
+        Task { @MainActor [updaterViewModel, version] in
+            updaterViewModel.noteAvailableUpdate(version: version)
+        }
+    }
+
+    func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
+        let updaterViewModel = updaterViewModel
+        Task { @MainActor [updaterViewModel] in updaterViewModel.clearAvailableUpdate() }
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        let updaterViewModel = updaterViewModel
+        Task { @MainActor [updaterViewModel] in updaterViewModel.clearAvailableUpdate() }
+    }
 }
 
 // MARK: - Onboarding launcher

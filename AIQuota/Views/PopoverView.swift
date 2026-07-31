@@ -3,6 +3,7 @@ import AIQuotaKit
 
 struct PopoverView: View {
     @Environment(QuotaViewModel.self) private var viewModel
+    @Environment(UpdaterViewModel.self) private var updater
     @Environment(\.openSettings) private var openSettings
 
     /// Captured reference to the MenuBarExtra NSWindow so we can re-show it
@@ -71,6 +72,7 @@ struct PopoverView: View {
 
             statsRow
 
+            updateAvailableRow
             Divider()
             footer
         }
@@ -355,7 +357,7 @@ struct PopoverView: View {
                     let tint: Color = credits.limitReached || credits.severity == .critical
                         ? .critical
                         : .warningAmber
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: -2) {
                         Text("Usage credits:")
                             .font(.caption2)
                             .foregroundStyle(tint)
@@ -540,6 +542,7 @@ struct PopoverView: View {
                 }
             }
             .padding(24)
+            updateAvailableRow
             Divider()
             HStack {
                 Button { openSettingsKeepingPopover() } label: {
@@ -584,6 +587,30 @@ struct PopoverView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var updateAvailableRow: some View {
+        if let version = updater.availableUpdateVersion {
+            Divider()
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.warningAmber)
+                    .frame(width: 7, height: 7)
+                Text("Update Available")
+                    .fontWeight(.medium)
+                Text(version)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Spacer()
+                Button("Update…") { updater.checkForUpdates() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Open the AIQuota update")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
     }
 
     // MARK: - Error Banner

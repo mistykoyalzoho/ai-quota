@@ -26,7 +26,7 @@ The marketing site in `docs/` follows the shared Codex web preview convention us
 - **Notification controls** — a single notifications group with a master switch, per-service disclosure rows, and Mac-style checkbox controls for detailed alert choices
 - **Quiet account diagnostics** — Settings combines account status and redacted diagnostics so each service shows whether it is connected without duplicating developer-only HTTP details
 - **Recovery after updates** — Codex and Claude Code sessions silently reconnect from accessible CLI credentials or web sessions after app replacements without presenting background Keychain prompts, and widget timelines reload more aggressively on launch
-- **Auto-update** — Sparkle checks silently on launch and twice daily, with gentle reminders instead of intrusive prompts
+- **Auto-update** — Sparkle checks silently on launch and twice daily, marking available updates with an amber menu-bar badge instead of an intrusive prompt
 
 ---
 
@@ -248,7 +248,7 @@ See the pre-release checklist at the top of [`scripts/release.sh`](scripts/relea
 - [x] Harmonized window display — both services retain stable 5-hour and 7-day tracks, while provider-specific unavailable windows are clearly identified
 - [x] Widget service picker — choose Codex or Claude Code per widget instance
 - [x] Notifications — below 15%, below 5%, limit reached, quota reset; rolling-window drift no longer triggers spurious alerts
-- [x] Check for Updates — manual + silent auto-check on launch and twice daily via Sparkle, with gentle reminders
+- [x] Check for Updates — manual + silent auto-check on launch and twice daily via Sparkle, with an unobtrusive menu-bar badge and in-popover update action
 
 ---
 
