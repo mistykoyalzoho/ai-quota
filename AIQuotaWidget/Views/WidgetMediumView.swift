@@ -11,6 +11,7 @@ private struct WidgetDetailRowData: Identifiable {
     let tint: Color
     var labelTint: Color = .secondary
     var valueTint: Color = .primary
+    var usesTwoLineLayout = false
 
     var id: String { "\(label)-\(value)-\(icon)" }
 }
@@ -117,26 +118,19 @@ private extension QuotaEntry {
                     tint: .secondary
                 ),
             ]
-            if let bonus = usage.bonusUsage, bonus.spent > 0 {
+            if let credits = usage.usageCredits, credits.spent > 0 {
+                let tint: Color = credits.limitReached || credits.severity == .critical
+                    ? .red
+                    : widgetOverageColor
                 detailRows.append(
                     WidgetDetailRowData(
-                        label: "Spent",
-                        value: widgetBonusSpend(bonus),
+                        label: "Fable 5 / Post-Limit",
+                        value: "\(widgetUsageCreditsSpend(credits)) spent",
                         icon: "plus.circle.fill",
-                        tint: widgetOverageColor,
-                        labelTint: widgetOverageColor,
-                        valueTint: widgetOverageColor
-                    )
-                )
-            } else if let extra = usage.extraUsage, extra.isEnabled {
-                detailRows.append(
-                    WidgetDetailRowData(
-                        label: "Spent",
-                        value: "\(Int(extra.usedCredits))/\(extra.monthlyLimit)",
-                        icon: "plus.circle.fill",
-                        tint: widgetOverageColor,
-                        labelTint: widgetOverageColor,
-                        valueTint: widgetOverageColor
+                        tint: tint,
+                        labelTint: tint,
+                        valueTint: tint,
+                        usesTwoLineLayout: true
                     )
                 )
             }
@@ -170,16 +164,16 @@ private func widgetCountdownText(prefix: String, seconds: Int) -> String {
     return "\(prefix) \(minutes)m"
 }
 
-private func widgetBonusSpend(_ bonus: ClaudeUsage.BonusUsage) -> String {
-    if let currencyCode = bonus.currencyCode {
+private func widgetUsageCreditsSpend(_ credits: ClaudeUsage.UsageCredits) -> String {
+    if let currencyCode = credits.currencyCode {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = currencyCode
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: bonus.spent)) ?? widgetCreditAmount(bonus.spent)
+        return formatter.string(from: NSNumber(value: credits.spent)) ?? widgetCreditAmount(credits.spent)
     }
-    return widgetCreditAmount(bonus.spent)
+    return widgetCreditAmount(credits.spent)
 }
 
 private func widgetCodexDollarAmount(_ credits: Double) -> String {
@@ -237,6 +231,45 @@ private struct WidgetHeaderView: View {
     }
 }
 
+private struct WidgetDetailRowView: View {
+    let row: WidgetDetailRowData
+    let iconSize: CGFloat
+    let iconWidth: CGFloat
+
+    var body: some View {
+        HStack(alignment: row.usesTwoLineLayout ? .top : .center, spacing: 5) {
+            Image(systemName: row.icon)
+                .font(.system(size: iconSize))
+                .foregroundStyle(row.tint)
+                .frame(width: iconWidth)
+
+            if row.usesTwoLineLayout {
+                VStack(alignment: .leading, spacing: 1) {
+                    label
+                    value
+                }
+            } else {
+                label
+                value
+            }
+        }
+    }
+
+    private var label: some View {
+        Text(row.label + ":")
+            .font(.caption2)
+            .foregroundStyle(row.labelTint)
+    }
+
+    private var value: some View {
+        Text(row.value)
+            .font(.caption2.monospacedDigit().bold())
+            .foregroundStyle(row.valueTint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+    }
+}
+
 private struct WidgetStatsColumn: View {
     let snapshot: WidgetServiceSnapshot?
     let emptyLabel: String
@@ -253,20 +286,7 @@ private struct WidgetStatsColumn: View {
                 }
 
                 ForEach(snapshot.detailRows) { row in
-                    HStack(spacing: 5) {
-                        Image(systemName: row.icon)
-                            .font(.system(size: 9))
-                            .foregroundStyle(row.tint)
-                            .frame(width: 13)
-                        Text(row.label + ":")
-                            .font(.caption2)
-                            .foregroundStyle(row.labelTint)
-                        Text(row.value)
-                            .font(.caption2.monospacedDigit().bold())
-                            .foregroundStyle(row.valueTint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
+                    WidgetDetailRowView(row: row, iconSize: 9, iconWidth: 13)
                 }
 
                 if showsFooter {
@@ -307,20 +327,7 @@ private struct WidgetMediumStatsColumn: View {
                 }
 
                 ForEach(snapshot.detailRows) { row in
-                    HStack(spacing: 5) {
-                        Image(systemName: row.icon)
-                            .font(.system(size: 9))
-                            .foregroundStyle(row.tint)
-                            .frame(width: 13)
-                        Text(row.label + ":")
-                            .font(.caption2)
-                            .foregroundStyle(row.labelTint)
-                        Text(row.value)
-                            .font(.caption2.monospacedDigit().bold())
-                            .foregroundStyle(row.valueTint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
+                    WidgetDetailRowView(row: row, iconSize: 9, iconWidth: 13)
                 }
 
                 Text(snapshot.detailFooter)
@@ -456,20 +463,7 @@ private struct WidgetServiceDetailPanel: View {
                 }
 
                 ForEach(snapshot.detailRows) { row in
-                    HStack(spacing: 5) {
-                        Image(systemName: row.icon)
-                            .font(.system(size: 10))
-                            .foregroundStyle(row.tint)
-                            .frame(width: 14)
-                        Text(row.label + ":")
-                            .font(.caption2)
-                            .foregroundStyle(row.labelTint)
-                        Text(row.value)
-                            .font(.caption2.monospacedDigit().bold())
-                            .foregroundStyle(row.valueTint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
+                    WidgetDetailRowView(row: row, iconSize: 10, iconWidth: 14)
                 }
 
                 Spacer(minLength: 0)

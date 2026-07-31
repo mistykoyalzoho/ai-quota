@@ -63,6 +63,7 @@ struct PopoverTypographyTests {
     func variableSpendingUsesCostAttentionColors() throws {
         let popoverSource = try String(contentsOf: repoRoot.appending(path: "AIQuota/Views/PopoverView.swift"), encoding: .utf8)
         let demoSource = try String(contentsOf: repoRoot.appending(path: "AIQuota/Demo/DemoDriver.swift"), encoding: .utf8)
+        let widgetSource = try String(contentsOf: repoRoot.appending(path: "AIQuotaWidget/Views/WidgetMediumView.swift"), encoding: .utf8)
 
         #expect(popoverSource.contains(#""Usage credits:""#))
         #expect(popoverSource.contains(#""Separate from plan limits""#))
@@ -85,6 +86,12 @@ struct PopoverTypographyTests {
         #expect(demoSource.contains("map[20] = off"))
         #expect(demoSource.contains("map[22] = 238"))
         #expect(demoSource.contains("map[24] = extra(5150)"))
+        #expect(widgetSource.contains("if let credits = usage.usageCredits, credits.spent > 0"))
+        #expect(widgetSource.contains(#"label: "Fable 5 / Post-Limit""#))
+        #expect(widgetSource.contains(#"value: "\(widgetUsageCreditsSpend(credits)) spent""#))
+        #expect(widgetSource.contains("usesTwoLineLayout: true"))
+        #expect(!widgetSource.contains("if let bonus = usage.bonusUsage"))
+        #expect(!widgetSource.contains("else if let extra = usage.extraUsage"))
     }
 
     @Test("duplicate network errors collapse into one banner")
