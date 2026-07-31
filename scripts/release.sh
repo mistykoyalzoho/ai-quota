@@ -221,7 +221,8 @@ NOTES_HTML=$(echo "$RELEASE_NOTES" | sed \
   | sed 's|<li>|<ul><li>|' \
   | sed 's|</li> <h2>|</li></ul><h2>|g' \
   | sed 's|</li> *<img|</li></ul> <img|' \
-  | sed 's|</li> *$|</li></ul>|')
+  | sed 's|</li> *$|</li></ul>|' \
+  | sed 's|[[:space:]]*$||')
 
 cat > "$APPCAST" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
