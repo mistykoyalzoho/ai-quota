@@ -14,6 +14,7 @@ final class ReleaseScriptTests: XCTestCase {
         XCTAssertFalse(source.contains("gh release upload \"$TAG\" \"$ZIP\" \"$APPCAST\" --clobber"))
         XCTAssertTrue(source.contains("gh release create \"$TAG\" \"$ZIP\" \"$MANUAL_ZIP\" \"$APPCAST\""))
         XCTAssertTrue(source.contains("[ \"$MANUAL_SIG\" = \"$SIGNATURE\" ]"))
+        XCTAssertTrue(source.contains("SCREENSHOT_SRC=$(find \"$HOME/Desktop\""))
     }
 
     private var repoRoot: URL {

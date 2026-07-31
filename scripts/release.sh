@@ -128,6 +128,8 @@ RELEASE_NOTES=$(cat "$NOTES_FILE")
 rm "$NOTES_FILE"
 
 # ── Attach screenshot if present on Desktop ───────────────────────────────────
+SCREENSHOT_SRC=$(find "$HOME/Desktop" -maxdepth 1 -iname "AIQuota-${VERSION}.png" -o -iname "AIQuota ${VERSION}.png" 2>/dev/null | head -1)
+SCREENSHOT_SRC="${SCREENSHOT_SRC:-}"
 if [ -z "$SCREENSHOT_SRC" ] || [ ! -f "$SCREENSHOT_SRC" ]; then
     echo ""
     read -r -p "No screenshot at ~/Desktop/AIQuota-${VERSION}.png. Add one now and press Enter, or type 's' to skip: " SCREENSHOT_REPLY
