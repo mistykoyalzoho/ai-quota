@@ -149,6 +149,9 @@ if [ -z "$SCREENSHOT_SRC" ] || [ ! -f "$SCREENSHOT_SRC" ]; then
 fi
 
 if [ -f "${SCREENSHOT_SRC:-}" ]; then
+    SCREENSHOT_FILENAME=$(basename "$SCREENSHOT_SRC")
+    SCREENSHOT_UPLOAD_NAME="${SCREENSHOT_FILENAME// /.}"
+    SCREENSHOT_URL="https://github.com/${REPO}/releases/download/${TAG}/${SCREENSHOT_UPLOAD_NAME}"
     echo "▶ Screenshot found — preparing for upload…"
     SCREENSHOT_UPLOAD_PATH="/tmp/${SCREENSHOT_UPLOAD_NAME}"
     cp "$SCREENSHOT_SRC" "$SCREENSHOT_UPLOAD_PATH"
