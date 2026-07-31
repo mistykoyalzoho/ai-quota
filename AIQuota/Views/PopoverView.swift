@@ -365,7 +365,7 @@ struct PopoverView: View {
                                 .foregroundStyle(tint)
                                 .lineLimit(1)
                             InfoPopoverButton(
-                                title: "One Monthly Total",
+                                title: "Fable 5 & Post-Limit Usage",
                                 text: claudeUsageCreditsHelpText,
                                 tint: tint
                             )
@@ -407,7 +407,7 @@ struct PopoverView: View {
     }
 
     private var claudeUsageCreditsHelpText: String {
-        "May include Fable 5 pay-as-you-go and usage after plan limits. Claude doesn’t provide a reliable breakdown."
+        "Claude reports both as one monthly total and doesn’t provide a reliable breakdown."
     }
 
     private var currentMonthName: String {
