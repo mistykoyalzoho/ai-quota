@@ -161,8 +161,8 @@ struct ClaudeOAuthCredentialsStoreTests {
         #expect(credentials.accessToken == "fresh-keychain-token")
     }
 
-    @Test("interactive Keychain lookup prefers the newest Claude Code item")
-    func interactiveKeychainLookupPrefersNewestItem() {
+    @Test("noninteractive Keychain lookup prefers the newest Claude Code item")
+    func noninteractiveKeychainLookupPrefersNewestItem() {
         let older = Data("older".utf8)
         let newer = Data("newer".utf8)
         let rows: [[String: Any]] = [
@@ -177,6 +177,22 @@ struct ClaudeOAuthCredentialsStoreTests {
         ]
 
         #expect(ClaudeOAuthKeychainReader.newestPersistentRef(in: rows) == newer)
+    }
+
+    @Test("Claude Code Keychain credential reads cannot present authentication UI")
+    func keychainCredentialReadsAreNoninteractive() throws {
+        let source = try String(
+            contentsOf: repoRoot.appending(path: "Packages/AIQuotaKit/Sources/AIQuotaKit/Auth/ClaudeOAuthCredentialsStore.swift"),
+            encoding: .utf8
+        )
+
+        #expect(source.contains("public static let claudeCodeNoninteractive"))
+        #expect(!source.contains("claudeCodeInteractive"))
+        #expect(source.contains("private static func nonInteractiveQuery"))
+        #expect(source.contains("authContext.interactionNotAllowed = true"))
+        #expect(source.contains("query[kSecUseAuthenticationContext] = authContext"))
+        #expect(source.contains("let query = nonInteractiveQuery([\n            kSecClass: kSecClassGenericPassword,\n            kSecValuePersistentRef: persistentRef"))
+        #expect(source.contains("let query = nonInteractiveQuery([\n            kSecClass: kSecClassGenericPassword,\n            kSecAttrService: service"))
     }
 
     @Test("CLAUDE_CONFIG_DIR wins over home credentials path")
@@ -196,5 +212,14 @@ struct ClaudeOAuthCredentialsStoreTests {
 
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    }
+
+    private var repoRoot: URL {
+        URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 }

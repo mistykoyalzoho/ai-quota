@@ -77,7 +77,7 @@ public actor ClaudeAuthCoordinator {
         self.headlessSessionReviver = headlessSessionReviver ?? ClaudeAuthCoordinator.headlessWebSessionReviver
         self.oauthCredentialsLoader = oauthCredentialsLoader ?? { allowKeychain in
             try ClaudeOAuthCredentialsStore.loadUsable(
-                keychainReader: allowKeychain ? .claudeCodeInteractive : nil
+                keychainReader: allowKeychain ? .claudeCodeNoninteractive : nil
             )
         }
         self.sessionValidator = sessionValidator ?? ClaudeAuthCoordinator.liveSessionValidator

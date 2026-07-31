@@ -47,12 +47,11 @@ public enum ClaudeOAuthCredentialsError: LocalizedError, Sendable {
 }
 
 public struct ClaudeOAuthKeychainReader: Sendable {
-    public static let claudeCodeInteractive = ClaudeOAuthKeychainReader {
+    public static let claudeCodeNoninteractive = ClaudeOAuthKeychainReader {
         try readClaudeCodeSecurityFramework()
     }
 
     private static let serviceName = "Claude Code-credentials"
-    private static let sessionState = SessionState()
 
     private let read: @Sendable () throws -> Data?
 
@@ -65,7 +64,6 @@ public struct ClaudeOAuthKeychainReader: Sendable {
     }
 
     private static func readClaudeCodeSecurityFramework() throws -> Data? {
-        guard !sessionState.isAccessDenied else { return nil }
         if let persistentRef = try newestClaudeCodePersistentRef() {
             return try readData(persistentRef: persistentRef)
         }
@@ -115,23 +113,34 @@ public struct ClaudeOAuthKeychainReader: Sendable {
     }
 
     private static func readData(persistentRef: Data) throws -> Data? {
-        let query: [CFString: Any] = [
+        let query = nonInteractiveQuery([
             kSecClass: kSecClassGenericPassword,
             kSecValuePersistentRef: persistentRef,
             kSecMatchLimit: kSecMatchLimitOne,
             kSecReturnData: true,
-        ]
+        ])
         return try copyData(query: query)
     }
 
     private static func readData(service: String) throws -> Data? {
-        let query: [CFString: Any] = [
+        let query = nonInteractiveQuery([
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecMatchLimit: kSecMatchLimitOne,
             kSecReturnData: true,
-        ]
+        ])
         return try copyData(query: query)
+    }
+
+    /// Claude Code owns this item, so background recovery must never ask the
+    /// user to grant AIQuota access. A protected item simply falls through to
+    /// AIQuota's WebKit sign-in path.
+    private static func nonInteractiveQuery(_ values: [CFString: Any]) -> [CFString: Any] {
+        let authContext = LAContext()
+        authContext.interactionNotAllowed = true
+        var query = values
+        query[kSecUseAuthenticationContext] = authContext
+        return query
     }
 
     private static func copyData(query: [CFString: Any]) throws -> Data? {
@@ -140,33 +149,12 @@ public struct ClaudeOAuthKeychainReader: Sendable {
         switch status {
         case errSecSuccess:
             return result as? Data
-        case errSecItemNotFound, errSecInteractionNotAllowed:
-            return nil
-        case errSecUserCanceled, errSecAuthFailed:
-            sessionState.markAccessDenied()
+        case errSecItemNotFound, errSecInteractionNotAllowed, errSecUserCanceled, errSecAuthFailed:
             return nil
         default:
             throw ClaudeOAuthKeychainError(status: status)
         }
     }
-
-    private final class SessionState: @unchecked Sendable {
-        private let lock = NSLock()
-        private var accessDenied = false
-
-        var isAccessDenied: Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            return accessDenied
-        }
-
-        func markAccessDenied() {
-            lock.lock()
-            defer { lock.unlock() }
-            accessDenied = true
-        }
-    }
-
 }
 
 private struct ClaudeOAuthKeychainError: LocalizedError {

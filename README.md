@@ -25,7 +25,7 @@ The marketing site in `docs/` follows the shared Codex web preview convention us
 - **ChatGPT and Claude sign-in** — reuses an existing Claude Code or Codex CLI login when available, and falls back to a browser-backed session otherwise (including Google sign-in, which opens in its own popup window); app authentication comes only from live OAuth or WebKit sessions, while widget credentials are stored separately for background refresh
 - **Notification controls** — a single notifications group with a master switch, per-service disclosure rows, and Mac-style checkbox controls for detailed alert choices
 - **Quiet account diagnostics** — Settings combines account status and redacted diagnostics so each service shows whether it is connected without duplicating developer-only HTTP details
-- **Recovery after updates** — Codex and Claude Code sessions silently reconnect from existing CLI credentials or web sessions after app replacements, and widget timelines reload more aggressively on launch
+- **Recovery after updates** — Codex and Claude Code sessions silently reconnect from accessible CLI credentials or web sessions after app replacements without presenting background Keychain prompts, and widget timelines reload more aggressively on launch
 - **Auto-update** — Sparkle checks silently on launch and twice daily, with gentle reminders instead of intrusive prompts
 
 ---
@@ -60,7 +60,7 @@ Claude reports credit spending as one combined monthly total, so AIQuota does no
 
 ## Installation
 
-1. Download `AIQuota.zip` from the [latest release](https://github.com/niederme/ai-quota/releases/latest)
+1. Download `AIQuota.zip` from the [latest release](https://github.com/niederme/ai-quota/releases/latest). Sparkle updates use immutable, build-specific archives internally.
 2. Unzip and move **AIQuota** to your Applications folder
 3. Launch AIQuota — it appears in your menu bar, not the Dock
 4. Follow the guided setup to connect your ChatGPT and/or Claude account

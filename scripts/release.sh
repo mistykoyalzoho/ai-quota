@@ -49,7 +49,6 @@ else
 fi
 echo "▶ Using Sparkle tools: ${SPARKLE}"
 REPO="niederme/ai-quota"
-ZIP="/tmp/AIQuota.zip"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APPCAST="${REPO_ROOT}/appcast.xml"
 
@@ -65,6 +64,14 @@ if [ "${FORCE_RELEASE:-0}" != "1" ]; then
     fi
 fi
 
+# A published tag is immutable. Replacing its archive can strand clients that
+# cached the earlier appcast and will make Sparkle reject the new bytes.
+if gh release view "$TAG" -R "$REPO" &>/dev/null; then
+    echo "✗ Release ${TAG} already exists. Published releases cannot be replaced."
+    echo "  Edit notes with 'gh release edit', or bump the version for binary changes."
+    exit 1
+fi
+
 # ── Locate exported .app on Desktop ──────────────────────────────────────────
 APP_SRC="$HOME/Desktop/AIQuota.app"
 if [ ! -d "$APP_SRC" ]; then
@@ -73,6 +80,22 @@ if [ ! -d "$APP_SRC" ]; then
     exit 1
 fi
 echo "▶ Using app: ${APP_SRC}"
+
+BUILD=$(defaults read "${APP_SRC}/Contents/Info" CFBundleVersion 2>/dev/null || echo "")
+APP_VERSION=$(defaults read "${APP_SRC}/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "")
+if [ -z "$BUILD" ]; then
+    echo "✗ Could not read CFBundleVersion from ${APP_SRC}."
+    exit 1
+fi
+if [ "$APP_VERSION" != "$VERSION" ]; then
+    echo "✗ Exported app version ${APP_VERSION:-unknown} does not match requested release ${VERSION}."
+    exit 1
+fi
+
+ZIP_BASENAME="AIQuota-${VERSION}-${BUILD}.zip"
+ZIP="/tmp/${ZIP_BASENAME}"
+MANUAL_ZIP="/tmp/AIQuota.zip"
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ZIP_BASENAME}"
 
 # ── Draft release notes from git commits since last tag ──────────────────────
 LAST_TAG=$(git -C "$REPO_ROOT" describe --tags --abbrev=0 2>/dev/null || echo "")
@@ -139,7 +162,7 @@ fi
 # reach the ZIP, Sparkle's strict codesign check rejects the update as "improperly
 # signed". Strip xattrs and exclude them from the archive.
 echo "▶ Building ZIP for ${TAG}…"
-rm -f "$ZIP"
+rm -f "$ZIP" "$MANUAL_ZIP"
 xattr -cr "$APP_SRC"
 
 # Sparkle validates the update with a strict codesign check; run the same check
@@ -154,6 +177,7 @@ if ! spctl -a -t exec "$APP_SRC"; then
 fi
 
 ditto -c -k --norsrc --noextattr --noqtn --keepParent "$APP_SRC" "$ZIP"
+cp "$ZIP" "$MANUAL_ZIP"
 
 if unzip -Z1 "$ZIP" | grep -q '/\._'; then
     echo "✗ ZIP contains AppleDouble (._*) entries — xattr contamination. Aborting."
@@ -169,12 +193,6 @@ echo "  Length:    ${LENGTH}"
 
 # ── Generate appcast.xml ──────────────────────────────────────────────────────
 echo "▶ Generating appcast.xml…"
-BUILD=$(defaults read "${APP_SRC}/Contents/Info" CFBundleVersion 2>/dev/null || echo "")
-if [ -z "$BUILD" ]; then
-    echo "✗ Could not read CFBundleVersion from ${APP_SRC}."
-    exit 1
-fi
-
 CURRENT_APPCAST_BUILD=$(grep -o '<sparkle:version>[^<]*</sparkle:version>' "$APPCAST" 2>/dev/null | head -1 | sed 's#<sparkle:version>##;s#</sparkle:version>##')
 if [[ -n "$CURRENT_APPCAST_BUILD" && "$BUILD" =~ ^[0-9]+$ && "$CURRENT_APPCAST_BUILD" =~ ^[0-9]+$ ]]; then
     if [ "$BUILD" -le "$CURRENT_APPCAST_BUILD" ]; then
@@ -183,7 +201,6 @@ if [[ -n "$CURRENT_APPCAST_BUILD" && "$BUILD" =~ ^[0-9]+$ && "$CURRENT_APPCAST_B
         exit 1
     fi
 fi
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/AIQuota.zip"
 SCREENSHOT_SRC=$(find "$HOME/Desktop" -maxdepth 1 -iname "AIQuota-${VERSION}.png" -o -iname "AIQuota ${VERSION}.png" 2>/dev/null | head -1)
 SCREENSHOT_SRC="${SCREENSHOT_SRC:-}"
 SCREENSHOT_FILENAME=$(basename "${SCREENSHOT_SRC:-AIQuota-${VERSION}.png}")
@@ -269,29 +286,20 @@ ${NOTES_HTML}
 EOF
 
 # ── Push to GitHub ────────────────────────────────────────────────────────────
-echo "▶ Creating/updating GitHub release ${TAG}…"
+echo "▶ Creating GitHub release ${TAG}…"
 EXTRA_ASSETS=()
 [ -n "${SCREENSHOT_SRC:-}" ] && [ -f "${SCREENSHOT_SRC:-}" ] && EXTRA_ASSETS+=("$SCREENSHOT_SRC")
 
-if gh release view "$TAG" -R "$REPO" &>/dev/null; then
-    gh release edit "$TAG" --notes "$RELEASE_NOTES" -R "$REPO"
-    if [ "${#EXTRA_ASSETS[@]}" -gt 0 ]; then
-        gh release upload "$TAG" "$ZIP" "$APPCAST" "${EXTRA_ASSETS[@]}" --clobber -R "$REPO"
-    else
-        gh release upload "$TAG" "$ZIP" "$APPCAST" --clobber -R "$REPO"
-    fi
+if [ "${#EXTRA_ASSETS[@]}" -gt 0 ]; then
+    gh release create "$TAG" "$ZIP" "$MANUAL_ZIP" "$APPCAST" "${EXTRA_ASSETS[@]}" \
+        --title "AIQuota ${VERSION}" \
+        --notes "$RELEASE_NOTES" \
+        -R "$REPO"
 else
-    if [ "${#EXTRA_ASSETS[@]}" -gt 0 ]; then
-        gh release create "$TAG" "$ZIP" "$APPCAST" "${EXTRA_ASSETS[@]}" \
-            --title "AIQuota ${VERSION}" \
-            --notes "$RELEASE_NOTES" \
-            -R "$REPO"
-    else
-        gh release create "$TAG" "$ZIP" "$APPCAST" \
-            --title "AIQuota ${VERSION}" \
-            --notes "$RELEASE_NOTES" \
-            -R "$REPO"
-    fi
+    gh release create "$TAG" "$ZIP" "$MANUAL_ZIP" "$APPCAST" \
+        --title "AIQuota ${VERSION}" \
+        --notes "$RELEASE_NOTES" \
+        -R "$REPO"
 fi
 
 # ── Verify the published update exactly as Sparkle will ──────────────────────
@@ -303,10 +311,12 @@ echo "▶ Verifying published assets (may wait for CDN propagation)…"
 VERIFY_DIR=$(mktemp -d /tmp/aiquota-verify.XXXXXX)
 PUBLISHED_OK=0
 for attempt in $(seq 1 20); do
-    curl -fsSL -o "${VERIFY_DIR}/AIQuota.zip" "$DOWNLOAD_URL" || true
+    curl -fsSL -o "${VERIFY_DIR}/${ZIP_BASENAME}" "$DOWNLOAD_URL" || true
+    curl -fsSL -o "${VERIFY_DIR}/AIQuota.zip" "https://github.com/${REPO}/releases/download/${TAG}/AIQuota.zip" || true
     curl -fsSL -o "${VERIFY_DIR}/appcast.xml" "https://github.com/${REPO}/releases/download/${TAG}/appcast.xml" || true
-    REMOTE_SIG=$("${SPARKLE}/sign_update" "${VERIFY_DIR}/AIQuota.zip" 2>/dev/null | grep -o 'sparkle:edSignature="[^"]*"' | sed 's/sparkle:edSignature="//;s/"//' || true)
-    if [ "$REMOTE_SIG" = "$SIGNATURE" ] && cmp -s "${VERIFY_DIR}/appcast.xml" "$APPCAST"; then
+    REMOTE_SIG=$("${SPARKLE}/sign_update" "${VERIFY_DIR}/${ZIP_BASENAME}" 2>/dev/null | grep -o 'sparkle:edSignature="[^"]*"' | sed 's/sparkle:edSignature="//;s/"//' || true)
+    MANUAL_SIG=$("${SPARKLE}/sign_update" "${VERIFY_DIR}/AIQuota.zip" 2>/dev/null | grep -o 'sparkle:edSignature="[^"]*"' | sed 's/sparkle:edSignature="//;s/"//' || true)
+    if [ "$REMOTE_SIG" = "$SIGNATURE" ] && [ "$MANUAL_SIG" = "$SIGNATURE" ] && cmp -s "${VERIFY_DIR}/appcast.xml" "$APPCAST"; then
         PUBLISHED_OK=1
         break
     fi
@@ -319,7 +329,7 @@ if [ "$PUBLISHED_OK" != "1" ]; then
     exit 1
 fi
 
-ditto -x -k "${VERIFY_DIR}/AIQuota.zip" "${VERIFY_DIR}/out"
+ditto -x -k "${VERIFY_DIR}/${ZIP_BASENAME}" "${VERIFY_DIR}/out"
 if ! codesign --verify --deep --strict "${VERIFY_DIR}/out/AIQuota.app"; then
     echo "✗ Published app fails strict codesign validation — Sparkle will reject it."
     exit 1

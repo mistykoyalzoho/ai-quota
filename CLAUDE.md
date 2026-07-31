@@ -62,11 +62,12 @@ The full release script is at `scripts/release.sh`. It handles zipping, signing,
 - The appcast `<sparkle:version>` is the `CFBundleVersion` from the exported `.app` (not the marketing version), so `CURRENT_PROJECT_VERSION` must increase on every release
 - ZIP format is required (not DMG) — Sparkle sandboxed apps get "installer launch" errors with DMGs
 - GitHub release and appcast always use the tag `vX.Y.Z` format
+- Sparkle appcasts use immutable `AIQuota-X.Y.Z-BUILD.zip` assets. `AIQuota.zip` remains only as the stable manual-download alias.
 - **Before running `release.sh`**, draft user-facing release notes and get approval — the script opens an editor immediately and raw commit messages are not acceptable release notes
 - **Release notes must be shared in a code block** for approval before running the script
 - **Release notes ordering** — weight bullets by user impact: features affecting the most users first, one-time experiences (onboarding polish) last
 - **The script self-verifies** — it refuses to run from a checkout out of sync with origin/main (`FORCE_RELEASE=1` to override), strips xattrs and strict-validates the app before zipping (iCloud Desktop sync adds `com.apple.FinderInfo` xattrs that make Sparkle reject updates as "improperly signed"), and after upload it re-downloads the published assets and validates the full Sparkle chain, retrying through GitHub CDN propagation (can take a few minutes). Don't announce a release until that final verify passes.
-- **Never re-run `release.sh` casually to tweak notes** — it re-zips whatever is on the Desktop and replaces the release ZIP; use `gh release edit` for notes-only changes.
+- **Published tags are immutable** — `release.sh` refuses to alter an existing GitHub release. Use `gh release edit` for notes-only changes, or publish a new version for any binary change.
 
 ---
 
