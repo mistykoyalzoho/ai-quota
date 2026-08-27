@@ -12,6 +12,7 @@ xcuserdata/
 # Build artifacts
 build/
 DerivedData/
+macos/dist/
 
 # Swift Package Manager
 .build/
